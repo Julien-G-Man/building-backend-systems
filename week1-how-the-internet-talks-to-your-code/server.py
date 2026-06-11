@@ -1,33 +1,44 @@
 import socket
 
-port=9001
-# AF_INET = use IPv4 addresses (e.g. 127.0.0.1)
-# SOCK_STREAM = TCP: reliable, ordered, connection-based
-server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-
-# SO_REUSEADDR lets us restart without waiting for the OS to 
-# release the port — saves frustration during development 
-server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-
-# Binding: claim port 9000 on the local machine
-server_socket.bind(('0.0.0.0', port))
-
-# Begin listening, queue at most 1 waiting connection
-server_socket.listen(1)
-print(f'Listening on port {port}...')
-
-for i in range(1):
-    # accept() blocks here; program pauses until client connects
-    client_socket, address = server_socket.accept()
-    print(f"{i+1}. Connection from {address}")
+def parse_request(raw: bytes) -> dict:
+    text = raw.decode('utf-8', errors='replace')
+    lines = text.split('\r\n')
+    parts = lines[0].split(' ')
+    return {'method': parts[0] if len(parts) > 0 else '',
+            'path':   parts[1] if len(parts) > 1 else '/'}
     
-    # recv(1024): read up to 1024 bytes form the client
-    data = client_socket.recv(1024)
-    print(f"Received: {data.decode()}")
-    print(len(data))
+
+def make_response(status: int, body: str) -> bytes:
+    reason = {200: 'OK', 404:'Not Found', 405:'Method Not Allowed'}.get(status, 'Unknown')
+    return (
+        f'HTTP/1.1 {status} {reason}\r\n'
+        f'Content-Type: application/json\r\n'
+        f'Content-Length: {len(body.encode())}\r\n'
+        f'Connection: close\r\n'
+        f'\r\n'
+        f'{body}'
+    ).encode()
     
-    # sockets send bytes, not strings
-    client_socket.sendall(b'Hello from raw socket server!')
-    
-    # close this connection and return to waiting
-    client_socket.close()
+
+ROUTES = {
+    ('GET',  '/'):      (200, '{"message": "Welcome"}'),
+    ('GET', '/health'): (200, '{"status": "ok"}'),
+    ('POST', '/echo'): (200, '{"echo": "received"}')
+}
+
+server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1) 
+server.bind(('127.0.0.1', 9000))
+server.listen(5)
+print('HTTP server listening on http://127.0.0.1:9000')
+
+while True:
+    client, addr = server.accept()
+    raw = client.recv(4096)
+    req = parse_request(raw)
+    key = (req['method'], req['path'])
+    status, body_str = ROUTES.get(key, (404, '{"error": "Not found"}'))
+    response = make_response(status, body_str)
+    print(response)
+    client.sendall(response)
+    client.close()
