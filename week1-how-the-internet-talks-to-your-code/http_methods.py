@@ -34,7 +34,7 @@ def create_student(data: StudentCreate):
     global next_id
     student = {'id': next_id, **data.model_dump()}
     students[next_id] = student; next_id += 1
-    return JSONResponse(201, student, headers={'Location': f"/students/{student['id']}"})
+    return JSONResponse(content=student, status_code=201, headers={'Location': f"/students/{student['id']}"})
 
 @app.get('/students/{sid}')
 def get_student(sid: int):
